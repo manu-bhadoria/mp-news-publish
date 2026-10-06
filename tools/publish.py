@@ -10,7 +10,7 @@
 Every portal story that is live on a site is rebuilt each time, so the stored manifests (what the laptop last
 uploaded) never need to be written back from here.
 """
-import json, os, shutil, sys, tarfile, time, traceback, urllib.error, urllib.request
+import json, os, shutil, sys, tarfile, time, traceback, urllib.error, urllib.parse, urllib.request
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -145,7 +145,7 @@ def check(url, home_url, title, path):
     err = 'पेज नहीं खुला'
     for attempt in range(6):
         try:
-            code, page = fetch(url)
+            code, page = fetch(urllib.parse.quote(url, safe=':/'))
             text = page.decode('utf-8', 'replace')
             if code == 200 and (H.escape(piece, quote=False) in text or piece in text):
                 try:

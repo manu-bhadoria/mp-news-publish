@@ -9,7 +9,7 @@ assets/ (the engine checks they exist), the posters' link versions and their loo
 
     python3 tools/manifests.py [slug,slug]     # refresh these (all sites when none are given), then tell the portal
 """
-import hashlib, io, json, os, sys, time, urllib.error, urllib.request
+import hashlib, io, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -87,9 +87,9 @@ def read_site(slug, t, url, listed, pool):
         dep = cfdeploy.call(f'/accounts/{cfdeploy.ACC}/pages/projects/{t["name"]}')['canonical_deployment']['id']
         files = {p: [h, None] for p, h in cfdeploy.call(f'/accounts/{cfdeploy.ACC}/pages/projects/{t["name"]}/deployments/{dep}')['files'].items()}
         want = [p for p in files if p.startswith(POSTERS) or (p.startswith('/assets/photos/yt-') and p.endswith('.webp'))]
-        got = dict(zip(want, pool.map(lambda p: get(url + p), want)))
+        got = dict(zip(want, pool.map(lambda p: get(url + urllib.parse.quote(p)), want)))
         return files, got
-    got = dict(zip(listed, pool.map(lambda p: get(url + url_of(p)), listed)))
+    got = dict(zip(listed, pool.map(lambda p: get(url + urllib.parse.quote(url_of(p))), listed)))
     files = {p: [cfdeploy.file_hash(b, p), len(b)] for p, b in got.items() if b is not None}
     return files, {p: b for p, b in got.items() if b is not None and (p.startswith(POSTERS) or (p.startswith('/assets/photos/yt-') and p.endswith('.webp')))}
 
