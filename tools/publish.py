@@ -86,13 +86,30 @@ def build_one(args):
     t = time.time()
     try:
         from core.publishing import Publication, portal_feed
+        m = json.loads((WORK / 'manifests' / f'{slug}.json').read_text())
+        assets = NEWS / 'publications' / slug / 'assets'
+        for rel in m.get('assets') or []:          # photos and posters: the engine only checks that they exist
+            f = assets / rel
+            if not f.exists():
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.touch()
         out = OUT / slug
         shutil.rmtree(out, ignore_errors=True)
         out.mkdir(parents=True)
         (out / 'index.html').write_text('')        # build_partial does a full build into an empty folder; it rewrites this page
         pub = Publication(slug)
+        try:                                      # poster hashes from the laptop: the posters themselves are not shipped
+            from core import portal as PT
+            posters = m.get('posters') or {}
+            PT._AHASH.update({pub.folder / 'assets' / rel: h for rel, h in posters.items()})
+        except ImportError:
+            pass
+        pub.asset_versions.update(m.get('versions') or {})   # link versions of posters (their bytes are not shipped)
         tops = {portal_feed().site_topic(pub.brand['topics'], x)[0] for x in topics}
         pub.build_partial(out, ids=ids, removed=removed, topics=tops, places=set(places) | {'all'})
+        for f in out.rglob('*.html'):                  # a link versioned from an empty stand-in: never ship it
+            if '?v=e3b0c44298fc' in f.read_text(errors='replace'):
+                raise RuntimeError(f'{f.relative_to(out)}: फाइल का वर्ज़न नहीं मिला (लैपटॉप से सिंक दोबारा करें)')
         return slug, None, {i: pub.url(i) for i in ids + removed}, round(time.time() - t, 1)
     except Exception:
         return slug, traceback.format_exc()[-700:], {}, round(time.time() - t, 1)
