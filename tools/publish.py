@@ -223,7 +223,7 @@ def main():
                 print(f'{slug}: deploy failed: {e}', flush=True)
                 portal('/api/build/report', {'site': slug, 'on': p['on'], 'off': p['off'], 'ok': False, 'error': f'अपलोड नहीं हुआ: {str(e)[-200:]}'})
 
-        with ProcessPoolExecutor(os.cpu_count() or 2) as builds, ThreadPoolExecutor(6) as uploads:
+        with ProcessPoolExecutor(os.cpu_count() or 2) as builds, ThreadPoolExecutor(10) as uploads:
             shipped = [uploads.submit(ship, f.result()) for f in as_completed([builds.submit(build_one, j) for j in jobs])]
             for f in shipped:
                 f.result()
