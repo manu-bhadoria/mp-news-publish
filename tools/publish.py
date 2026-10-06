@@ -17,6 +17,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cfdeploy  # noqa: E402
+import manifests as M  # noqa: E402
 
 PORTAL = os.environ.get('PORTAL_URL', 'https://mp-news-dashboard.nihilycho.workers.dev').rstrip('/')
 KEY = os.environ.get('BUILD_KEY', '')
@@ -48,11 +49,20 @@ def fetch(url, timeout=30):
 
 
 def unpack():
-    for name in ('inputs.tar.zst', 'manifests.tar.zst'):
+    """inputs -> the laptop's repo layout; sites -> where each site is hosted and what it lists; manifests -> what each serves."""
+    for name, dest in (('inputs.tar.zst', REPO), ('sites.tar.zst', WORK / 'sites'), ('manifests.tar.zst', WORK / 'manifests')):
         src = WORK / name
-        dest = REPO if name.startswith('inputs') else WORK / 'manifests'
         dest.mkdir(parents=True, exist_ok=True)
-        os.system(f'zstd -dq --stdout "{src}" | tar -x -C "{dest}"')
+        if src.exists():
+            os.system(f'zstd -dq --stdout "{src}" | tar -x -C "{dest}"')
+
+
+def pack_manifests():
+    """Put the updated manifests back in the release, so the next run starts from what is live now."""
+    out = WORK / 'manifests.tar.zst'
+    os.system(f'tar -C "{WORK / "manifests"}" -cf - . | zstd -q -10 -T0 -f -o "{out}"')
+    if os.environ.get('GITHUB_REPOSITORY'):
+        os.system(f'gh release upload state "{out}" --clobber --repo "$GITHUB_REPOSITORY"')
 
 
 def photos(live):
@@ -99,7 +109,7 @@ def build_one(args):
     t = time.time()
     try:
         from core.publishing import Publication, portal_feed
-        m = json.loads((WORK / 'manifests' / f'{slug}.json').read_text())
+        m = M.stored(slug)
         assets = NEWS / 'publications' / slug / 'assets'
         for rel in m.get('assets') or []:          # photos and posters: the engine only checks that they exist
             f = assets / rel
@@ -162,7 +172,14 @@ def main():
         return
     try:
         unpack()
-        deploys = json.loads((WORK / 'manifests' / 'deploy.json').read_text())
+        deploys = M.deploys()
+        with ThreadPoolExecutor(32) as pool:                     # the sites' live file lists, re-read where they changed
+            for slug in plan:
+                if slug in deploys:
+                    try:
+                        M.refresh(slug, pool)
+                    except Exception as e:
+                        print(f'{slug}: could not read the live site: {e}', flush=True)
         live = merge_laptop(claim['live'], claim['removed'])
         photos(live)
         data = NEWS / 'portal' / 'data'
@@ -172,7 +189,7 @@ def main():
         by_id = {s['id']: s for s in live}
         jobs, skipped = [], {}
         for slug in plan:
-            if slug not in deploys or deploys[slug].get('legacy'):
+            if slug not in deploys or not M.stored(slug):
                 skipped[slug] = 'यह साइट अभी क्लाउड से नहीं छपती'
                 continue
             ids = [s['id'] for s in live if on_site(s, slug)]
@@ -187,7 +204,7 @@ def main():
                 print(f'{slug}: build failed\n{err}', flush=True)
                 return portal('/api/build/report', {'site': slug, 'on': p['on'], 'off': p['off'], 'ok': False, 'error': 'बिल्ड नहीं हुआ: ' + err[-200:]})
             try:
-                m = json.loads((WORK / 'manifests' / f'{slug}.json').read_text())
+                m = M.stored(slug)
                 files = dict(m['files'])
                 gone = [urls[i] for i in urls if i not in by_id or not on_site(by_id[i], slug)]
                 for path in list(files):                 # story folders of stories no longer on this site
@@ -196,6 +213,7 @@ def main():
                 new, local = cfdeploy.hash_tree(OUT / slug)
                 files.update(new)
                 n = cfdeploy.deploy(deploys[slug], files, local, m.get('headers'))
+                M.after_deploy(slug, files, local)
                 origin = deploys[slug]['url'].rstrip('/')
                 checks = {sid: check(origin + urls[sid], origin + '/', by_id[sid]['title'], urls[sid]) for sid in p['on']}
                 bad = [sid for sid, c in checks.items() if not c[0]]
@@ -209,6 +227,7 @@ def main():
             shipped = [uploads.submit(ship, f.result()) for f in as_completed([builds.submit(build_one, j) for j in jobs])]
             for f in shipped:
                 f.result()
+        pack_manifests()
         portal('/api/build/finish', {'run': RUN, 'ok': True})
     except Exception as e:
         traceback.print_exc()

@@ -1,0 +1,46 @@
+name: manifests
+# Started by the newsroom laptop after it syncs site data (newsroom/portal/cloud_sync.py), or by hand: re-read what
+# the sites serve on Cloudflare and tell the portal which sites are ready.
+on:
+  workflow_dispatch:
+    inputs:
+      sites:
+        description: 'Sites to re-read even if unchanged (comma separated); empty: check every site'
+        required: false
+        default: ''
+concurrency:
+  group: publish
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Tools
+        run: pip install --quiet blake3 pillow
+      - name: Site data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p work
+          gh release download state --repo "$GITHUB_REPOSITORY" --dir work --pattern '*.tar.zst'
+          for n in sites manifests; do mkdir -p work/$n; [ -f work/$n.tar.zst ] && zstd -dq --stdout work/$n.tar.zst | tar -x -C work/$n; done; true
+      - name: Read the live sites
+        env:
+          BUILD_KEY: ${{ secrets.BUILD_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PORTAL_URL: ${{ vars.PORTAL_URL || 'https://mp-news-dashboard.nihilycho.workers.dev' }}
+        run: python3 -u tools/manifests.py "${{ inputs.sites }}"
+      - name: Keep them
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -C work/manifests -cf - . | zstd -q -10 -T0 -f -o work/manifests.tar.zst
+          gh release upload state work/manifests.tar.zst --clobber --repo "$GITHUB_REPOSITORY"

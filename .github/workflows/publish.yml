@@ -6,7 +6,7 @@ concurrency:
   group: publish
   cancel-in-progress: false
 permissions:
-  contents: read
+  contents: write
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -26,6 +26,7 @@ jobs:
           gh release download state --repo "$GITHUB_REPOSITORY" --dir work --pattern '*.tar.zst'
       - name: Build and upload
         env:
+          GH_TOKEN: ${{ github.token }}
           BUILD_KEY: ${{ secrets.BUILD_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
