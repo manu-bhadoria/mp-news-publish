@@ -66,13 +66,26 @@ def photos(live):
             continue
         for v in p['variants']:
             dst = media / v['file']
-            if not dst.exists():
+            if not dst.exists() or not dst.stat().st_size:
                 code, data = fetch(PORTAL + '/media/' + v['file'], timeout=60)
                 dst.write_bytes(data)
             if dst.suffix == '.jpg':
                 webp = dst.with_suffix('.webp')
                 Image.open(dst).convert('RGB').save(webp, 'WEBP', quality=84, method=5)
                 v['file'], v['bytes'] = webp.name, webp.stat().st_size
+
+
+def merge_laptop(cloud, removed):
+    """Stories filed in the laptop portal (synced with the site data) stay on the sites too: for a story in both, the
+    later edit wins; one removed in either portal stays off."""
+    f = NEWS / 'portal' / 'data' / 'laptop-live.json'
+    own = json.loads(f.read_text()) if f.exists() else {}
+    gone = set(removed) | set(own.get('removed') or [])
+    by = {}
+    for st in (own.get('stories') or []) + cloud:
+        if st['id'] not in gone and (st['id'] not in by or (st.get('updated') or '') >= (by[st['id']].get('updated') or '')):
+            by[st['id']] = st
+    return sorted(by.values(), key=lambda st: st.get('published') or '', reverse=True)
 
 
 def on_site(st, slug):
@@ -150,7 +163,7 @@ def main():
     try:
         unpack()
         deploys = json.loads((WORK / 'manifests' / 'deploy.json').read_text())
-        live = claim['live']
+        live = merge_laptop(claim['live'], claim['removed'])
         photos(live)
         data = NEWS / 'portal' / 'data'
         data.mkdir(parents=True, exist_ok=True)
