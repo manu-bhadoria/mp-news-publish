@@ -22,6 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-1.47.2-chromium
       - name: Browser and Hindi fonts
         run: |
           npm i --no-save --silent playwright@1.47.2
@@ -34,7 +38,7 @@ jobs:
           PORTAL_URL: ${{ vars.PORTAL_URL || 'https://mp-news-dashboard.nihilycho.workers.dev' }}
           IDS: ${{ inputs.ids }}
           PW: ${{ github.workspace }}/node_modules/playwright
-          PAR: '6'
+          PAR: '12'
           TZ: Asia/Kolkata
         run: |
           gh release view reports >/dev/null 2>&1 || gh release create reports --title "Story reports" --notes "One PDF per portal story (links and home-page screenshots)."

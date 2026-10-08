@@ -66,16 +66,16 @@ async function shoot(ctx, x, dir, i) {
   try {
     const home = x.url.replace(/\/khabar\/.*$/, '/');
     await p.goto(home, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await p.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
+    await p.waitForLoadState('networkidle', { timeout: +(process.env.IDLE || 2500) }).catch(() => {});
     await p.addStyleTag({ content: '*{animation:none!important;transition:none!important;scroll-behavior:auto!important} [class*="cookie"],[id*="cookie"]{display:none!important}' }).catch(() => {});
     let ok = await p.evaluate(MARK, sid).catch(() => false), clip = null;
     if (ok) { const top = Math.max(0, Math.min(ok.top, 800 - 560)); clip = { x: 0, y: top, width: 1280, height: Math.min(800 - top, Math.max(560, ok.bottom - top)) }; }
     if (!ok) {                                          // not on the home page's visible part: the story page itself
       where = 'story';
       await p.goto(x.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await p.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
+      await p.waitForLoadState('networkidle', { timeout: +(process.env.IDLE || 2500) }).catch(() => {});
     }
-    await p.waitForTimeout(500);
+    await p.waitForTimeout(350);
     await p.screenshot({ path: file, type: 'jpeg', quality: 46, ...(clip ? { clip } : { clip: { x: 0, y: 0, width: 1280, height: 640 } }) });
   } catch (e) { where = 'error'; }
   await p.close();
@@ -89,6 +89,8 @@ async function shoot(ctx, x, dir, i) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rep-'));
   const b = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
   const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 0.72, locale: 'hi-IN' });
+  // video players, ads and trackers do not show in a still picture and cost most of the time: not loaded (thumbnails are)
+  await ctx.route(/(youtube(-nocookie)?\.com\/(embed|iframe_api|s\/player)|googlevideo|doubleclick|googletagmanager|google-analytics|googlesyndication|facebook\.(net|com)|platform\.twitter|instagram\.com\/embed)/, r => r.abort());
   const res = new Array(live.length); let next = 0;
   await Promise.all(Array.from({ length: PAR }, async () => { while (next < live.length) { const i = next++; res[i] = await shoot(ctx, live[i], dir, i); } }));
   await ctx.close();
