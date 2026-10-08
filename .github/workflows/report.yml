@@ -1,0 +1,43 @@
+name: report
+# A PDF for each portal story after it is published: every site's link and that site's home page with the story
+# outlined. Started by tools/publish.py at the end of a publishing run; kept in the "reports" release, where the
+# portal's PDF button fetches it.
+on:
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: portal story ids, comma separated
+        required: true
+concurrency:
+  group: report
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Browser and Hindi fonts
+        run: |
+          npm i --no-save --silent playwright@1.47.2
+          npx playwright install --with-deps chromium >/dev/null
+          sudo apt-get install -y -qq fonts-noto-core >/dev/null
+      - name: Screenshots and PDF
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_KEY: ${{ secrets.BUILD_KEY }}
+          PORTAL_URL: ${{ vars.PORTAL_URL || 'https://mp-news-dashboard.nihilycho.workers.dev' }}
+          IDS: ${{ inputs.ids }}
+          PW: ${{ github.workspace }}/node_modules/playwright
+          PAR: '6'
+          TZ: Asia/Kolkata
+        run: |
+          gh release view reports >/dev/null 2>&1 || gh release create reports --title "Story reports" --notes "One PDF per portal story (links and home-page screenshots)."
+          for id in $(echo "$IDS" | grep -oE 'pt-[a-z0-9-]+' | sort -u); do
+            node tools/report.cjs "$id" "$id.pdf" && gh release upload reports "$id.pdf" --clobber || echo "::warning::$id: no PDF"
+          done

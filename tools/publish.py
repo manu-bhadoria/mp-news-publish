@@ -161,6 +161,21 @@ def check(url, home_url, title, path):
     return [False, False, err]
 
 
+def report(ids):
+    """Start the report workflow (PDF of links and home-page screenshots) for the stories this run put on sites."""
+    repo, tok = os.environ.get('GITHUB_REPOSITORY'), os.environ.get('GH_TOKEN')
+    if not ids or not repo or not tok:
+        return
+    req = urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/workflows/report.yml/dispatches',
+                                 data=json.dumps({'ref': 'main', 'inputs': {'ids': ','.join(ids)}}).encode(), method='POST',
+                                 headers={'Authorization': f'Bearer {tok}', 'Accept': 'application/vnd.github+json', 'User-Agent': 'mp-news-publish'})
+    try:
+        urllib.request.urlopen(req, timeout=30)
+        print(f'report started for {len(ids)} stories', flush=True)
+    except Exception as e:                                   # the PDF is extra: publishing never fails over it
+        print(f'report not started: {e}', flush=True)
+
+
 def main():
     if not KEY:
         sys.exit('BUILD_KEY missing')
@@ -229,6 +244,7 @@ def main():
                 f.result()
         pack_manifests()
         portal('/api/build/finish', {'run': RUN, 'ok': True})
+        report(sorted({sid for p in plan.values() for sid in p['on']}))
     except Exception as e:
         traceback.print_exc()
         portal('/api/build/finish', {'run': RUN, 'ok': False, 'error': f'{type(e).__name__}: {e}'[:300]})
